@@ -26,59 +26,18 @@ METRIC_CLAIMS = {
     "relevance": "For the same source article, {A} is more relevant than {B}",
 }
 
-COHERENCE_DEFINITION = """
-Judge COHERENCE as logical flow and organization:
-- Sentences and ideas should connect smoothly.
-- Penalize disjointed, fragmented, or confusing ordering.
-- Look for clear progression from start to end.
-"""
-
-CONSISTENCY_DEFINITION = """
-Judge CONSISTENCY strictly as agreement with the source article:
-- Penalize contradictions, hallucinations, or unsupported inferences.
-- Tie claims to concrete facts/timelines in the article.
-"""
-
-FLUENCY_DEFINITION = """
-Judge FLUENCY only by language quality:
-- Grammar, clarity, readability, idiomaticity, rhythm.
-- Ignore factual coverage/faithfulness.
-"""
-
-RELEVANCE_DEFINITION = """
-Judge RELEVANCE as focus on the source’s main points:
-- Prioritize inclusion of key ideas from the article; penalize tangents.
-- Length/extra detail alone is not relevance.
-"""
-
 METRIC_TITLES = {
-    "coherence": "SummEval Coherence Committee",
-    "consistency": "SummEval Consistency Committee",
-    "fluency": "SummEval Fluency Committee",
-    "relevance": "SummEval Relevance Committee",
+    "coherence": "Summary Coherence Evaluation Committee",
+    "consistency": "Summary Consistency Evaluation Committee",
+    "fluency": "Summary Fluency Evaluation Committee",
+    "relevance": "Summary Relevance Evaluation Committee",
 }
-
-
-def _metric_definition(metric: str) -> str:
-    return {
-        "coherence": COHERENCE_DEFINITION,
-        "consistency": CONSISTENCY_DEFINITION,
-        "fluency": FLUENCY_DEFINITION,
-        "relevance": RELEVANCE_DEFINITION,
-    }[metric]
-
 
 def build_committee_context(metric: str, safe_article: str | None) -> str:
     title = METRIC_TITLES[metric]
-    definition = _metric_definition(metric)
     base = f"""
-    We are in the {title}.
-    We must decide which of two candidate summaries better satisfies the metric: {metric}.
-    We are deciding between {{A}} and {{B}}.
-
-    Authoritative metric definition:
-    {definition}
-    Only evaluate the candidates on the given metric.
+    This is the {title}.
+    The committee must decide which of two candidate summaries better satisfies the metric: {metric}.
     """.strip()
 
     if metric == "fluency":

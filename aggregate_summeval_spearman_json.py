@@ -270,6 +270,6 @@ python aggregate_summeval_spearman_json.py \
   --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_5/spearman_summary_K64.json
   
 python aggregate_summeval_spearman_json.py \
-  --out_root /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_6 \
-  --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_6/spearman_summary.json
+  --out_root /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_8 \
+  --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_8/spearman_summary.json
 """

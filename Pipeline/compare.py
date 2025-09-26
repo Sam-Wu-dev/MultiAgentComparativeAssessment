@@ -94,7 +94,7 @@ def run_compare_pipeline(
 
     if _has_valid_reasons(reasonsA):
         evalA = make_validation_agent(
-            "reason_list_A", "CRIT_scores_list_A", "claimA", "candidateA"
+            "reason_list_A", "CRIT_scores_list_A", "claimA"
         )
         _, sA3 = run_agent_with_input_state_sync(evalA, {**base, **sA1, **sA2})
         artifacts.CRIT_scores_init_A = CRITScores(
@@ -113,7 +113,7 @@ def run_compare_pipeline(
 
     if _has_valid_reasons(reasonsB):
         evalB = make_validation_agent(
-            "reason_list_B", "CRIT_scores_list_B", "claimB", "candidateB"
+            "reason_list_B", "CRIT_scores_list_B", "claimB"
         )
         _, sB3 = run_agent_with_input_state_sync(evalB, {**base, **sB1, **sB2})
         artifacts.CRIT_scores_init_B = CRITScores(
@@ -173,8 +173,7 @@ def run_compare_pipeline(
     QA_Valid_A = make_validation_agent(
         reason_list_key="qa_reason_list_A",
         output_key="qa_CRITScores_A",
-        claim_key="claimA",
-        position_key="candidateA",
+        claim_key="claimA"
     )
 
     for idx, ans in enumerate(artifacts.answer_list_A):
@@ -210,8 +209,7 @@ def run_compare_pipeline(
     QA_Valid_B = make_validation_agent(
         reason_list_key="qa_reason_list_B",
         output_key="qa_CRITScores_B",
-        claim_key="claimB",
-        position_key="candidateB",
+        claim_key="claimB"
     )
 
     for idx, ans in enumerate(artifacts.answer_list_B):

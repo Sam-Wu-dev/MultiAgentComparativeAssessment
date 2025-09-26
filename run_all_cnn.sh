@@ -3,8 +3,8 @@
 set -euo pipefail
 
 DATA_ROOT="/train-data1/shaosen/SummEvalDataSet/SummEval/dataFolder/cnn"
-OUT_ROOT="/home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_all"
-BUDGET=96   # or adjust as you like
+OUT_ROOT="/home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_CH"
+BUDGET=48   # or adjust as you like
 
 for article_dir in "$DATA_ROOT"/*; do
   if [ -d "$article_dir" ]; then

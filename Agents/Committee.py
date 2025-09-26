@@ -36,24 +36,22 @@ class CRITScores(BaseModel):
 
 
 # ── 1) Initial Advocates ─────────────────────────────────────────────
-def make_initial_advocate(output_key: str, claim_key: str, position_key: str):
+def make_initial_advocate(output_key: str, claim_key: str):
     return LlmAgent(
-        name="Advocate",  # neutral name for both sides
+        name="Advocate",
         model=MODEL20,
         instruction=f"""
         {{committee_context}}
 
         Your role: You are a {{member_name}} in the committee.
-        Your task: You must argue for {{{position_key}}} on the claim: "{{{claim_key}}}".
+        Your task: Convince the committee that "{{{claim_key}}}".
 
         Candidates:
         • {{candidateA}}: {{docA}}
         • {{candidateB}}: {{docB}}
 
         Give the committee your opinion on why "{{{claim_key}}}".
-
         {LANGUAGE}
-        {NAME_REFERENCE}
         """,
         output_key=output_key,
         include_contents="none",
@@ -62,12 +60,8 @@ def make_initial_advocate(output_key: str, claim_key: str, position_key: str):
     )
 
 
-AdvocateA_Init = make_initial_advocate(
-    output_key="ArgumentA", claim_key="claimA", position_key="candidateA"
-)
-AdvocateB_Init = make_initial_advocate(
-    output_key="ArgumentB", claim_key="claimB", position_key="candidateB"
-)
+AdvocateA_Init = make_initial_advocate(output_key="ArgumentA", claim_key="claimA")
+AdvocateB_Init = make_initial_advocate(output_key="ArgumentB", claim_key="claimB")
 
 
 # ── 2) Argument → Reason List (position-locked) ─────────────────────
@@ -83,7 +77,7 @@ def make_reason_extractor(
         Your role: You are an assistant to the committee.
         Your task: From the member's argument, extract the reasons that:
         1. stand in the position of {{{position_key}}}, and
-        2. support the claim: "{{{claim_key}}}"
+        2. strictly support the claim: "{{{claim_key}}}"
         
         If there is no such reason, output exactly:
         {{"reasons": ["None"]}}
@@ -91,7 +85,6 @@ def make_reason_extractor(
         Extraction Guidelines:
         - Distinctness: Each reason must present a unique idea, independent from the others, with no duplication or overlap.
         - Self-containment: Each reason must be fully understandable on its own, without relying on references or prior context.
-        - Evidence-bound: Each reason must explicitly include concrete evidence grounded in the provided materials.
         
         Argument text to analyze:
         {{{argument_key}}}
@@ -104,9 +97,8 @@ def make_reason_extractor(
         ]
         }}
 
-        {JSONFORMAT}
         {LANGUAGE}
-        {NAME_REFERENCE}
+        {JSONFORMAT}
         """,
         output_key=output_key,
         output_schema=ReasonList,
@@ -130,9 +122,7 @@ ReasonExtractorB = make_reason_extractor(
 )
 
 
-def make_validation_agent(
-    reason_list_key: str, output_key: str, claim_key: str, position_key: str
-):
+def make_validation_agent(reason_list_key: str, output_key: str, claim_key: str):
     return LlmAgent(
         name="Evaluator",
         model=MODEL20,
@@ -146,15 +136,18 @@ def make_validation_agent(
         • {{candidateA}}: {{docA}}
         • {{candidateB}}: {{docB}}
 
-        Reasons to evaluate (JSON):
+        Reasons to evaluate (JSON array, preserved order):
         {{{reason_list_key}}}
 
-        For each reason:
-        1) Validity — Logical coherence supporting the claim: "{{{claim_key}}}".  
-        2) Reliability — Grounding in the provided documents.
+        For each reason r, evaluate:
+        1) Validity (r → claim):
+        — Measures deductive/inductive support of r for the exact claim: "{{{claim_key}}}".  
+        2) Reliability (grounding of r):
+        — Measures truthfulness and support of r using provided materials only.
 
         Scores must be floats in [0, 1], rounded to two decimals, with concise explanations.
         Each reason must have exactly one (validity, reliability) pair.
+        Output the scores in the same order as the provided reasons.
 
         JSON output format:
         {{
@@ -167,8 +160,8 @@ def make_validation_agent(
           ]
         }}
 
-        {JSONFORMAT}
         {LANGUAGE}
+        {JSONFORMAT}
         """,
         output_key=output_key,
         output_schema=CRITScores,
@@ -179,16 +172,10 @@ def make_validation_agent(
 
 
 Evaluator_A = make_validation_agent(
-    reason_list_key="reason_list_A",
-    output_key="CRIT_scores_list_A",
-    claim_key="claimA",
-    position_key="candidateA",
+    reason_list_key="reason_list_A", output_key="CRIT_scores_list_A", claim_key="claimA"
 )
 Evaluator_B = make_validation_agent(
-    reason_list_key="reason_list_B",
-    output_key="CRIT_scores_list_B",
-    claim_key="claimB",
-    position_key="candidateB",
+    reason_list_key="reason_list_B", output_key="CRIT_scores_list_B", claim_key="claimB"
 )
 
 
@@ -217,15 +204,15 @@ def make_moderator(output_key: str, claim_key: str, reason_list_key: str):
         QUESTION TYPE SELECTION — pick **one** type per reason:
         1) Comparative question  
         WHEN: The reason already compares A vs B on a specific point.
-        ASK: Prompt the other member to compare the two candidates on that same point, providing evidence.
+        ASK: Prompt the other member to compare the two candidates on that same point.
 
         2) Refute question  
         WHEN: The reason explicitly attacks the other candidate.  
-        ASK: Invite the other member to defend the other candidate on that point, citing evidence.
+        ASK: Invite the other member to defend the other candidate on that point.
         
         3) Balancing question 
-        WHEN: The reason presents evidence that one candidate demonstrates a specific strength or impact.
-        ASK: Reference that evidence and ask the other member whether the other candidate also demonstrates comparable evidence of the same strength or impact.
+        WHEN: The reason highlights a strength of one candidate.
+        ASK: Challenge the other member to show the same strength in the other candidate.
         
         Critical constraints (self-contained):
         - The other members will only see the question (without the original reason), so your question must be self-contained.
@@ -241,9 +228,8 @@ def make_moderator(output_key: str, claim_key: str, reason_list_key: str):
           ]
         }}
 
-        {JSONFORMAT}
         {LANGUAGE}
-        {NAME_REFERENCE}
+        {JSONFORMAT}
         """,
         output_key=output_key,
         output_schema=QuestionList,
@@ -266,13 +252,7 @@ Moderator_B = make_moderator(
 
 
 # ── 5) Responders ──────────────────────────────────────────────────
-def make_responder(
-    name: str,
-    claim_key: str,
-    question_key: str,
-    answer_key: str,
-    position_key: str,
-):
+def make_responder(name: str, claim_key: str, question_key: str, answer_key: str):
     return LlmAgent(
         name=name,
         model=MODEL20,
@@ -280,7 +260,7 @@ def make_responder(
         {{committee_context}}
 
         Your role: You are a {{member_name}} in the committee.
-        Your task: Reply to the moderator’s question while supporting {{{position_key}}} on the claim: "{{{claim_key}}}".
+        Your task: Reply to the moderator’s question while following the claim: "{{{claim_key}}}".
 
         Candidate documents:
         • {{candidateA}}: {{docA}}
@@ -289,9 +269,8 @@ def make_responder(
         Moderator's question:
         {{{question_key}}}
 
-        Now, reply in support of {{{position_key}}} while answering the question.
+        Now, answer the question while keeping your claim: "{{{claim_key}}}".
         {LANGUAGE}
-        {NAME_REFERENCE}
         """,
         output_key=answer_key,
         include_contents="none",
@@ -302,18 +281,10 @@ def make_responder(
 
 # Wire (A answers for A; B answers for B)
 Responder_A = make_responder(
-    name="Responder",
-    claim_key="claimA",
-    question_key="question",
-    answer_key="answerA",
-    position_key="candidateA",
+    name="Responder", claim_key="claimA", question_key="question", answer_key="answerA"
 )
 Responder_B = make_responder(
-    name="Responder",
-    claim_key="claimB",
-    question_key="question",
-    answer_key="answerB",
-    position_key="candidateB",
+    name="Responder", claim_key="claimB", question_key="question", answer_key="answerB"
 )
 
 
@@ -334,7 +305,7 @@ def make_qa_reason_extractor(
         Your task: From the member's argument, extract the reasons that:
         1. directly answering the moderator's question, and
         2. stand in the position of {{{position_key}}}, and
-        3. support the claim: "{{{claim_key}}}"
+        3. strictly support the claim: "{{{claim_key}}}"
 
         If there is no such reason, output exactly:
         {{"reasons": ["None"]}}
@@ -342,7 +313,6 @@ def make_qa_reason_extractor(
         Extraction Guidelines:
         - Distinctness: Each reason must present a unique idea, independent from the others, with no duplication or overlap.
         - Self-containment: Each reason must be fully understandable on its own, without relying on references or prior context.
-        - Evidence-bound: Each reason must explicitly include concrete evidence grounded in the provided materials.
 
         Moderator's question:
         {{{question_key}}}
@@ -358,9 +328,8 @@ def make_qa_reason_extractor(
         ]
         }}
 
-        {JSONFORMAT}
         {LANGUAGE}
-        {NAME_REFERENCE}
+        {JSONFORMAT}
         """,
         output_key=output_key,
         output_schema=ReasonList,

@@ -73,10 +73,10 @@ def build_analysis(artifacts: PairArtifacts) -> PairAnalysis:
     return PairAnalysis(
         reasonForA=_make_block(
             artifacts.CRIT_scores_init_A.CRITScores,
-            [crit.CRITScores for crit in artifacts.CRIT_scores_QA_A],
+            [crit.CRITScores for crit in artifacts.CRIT_scores_QA_B],
         ),
         reasonForB=_make_block(
             artifacts.CRIT_scores_init_B.CRITScores,
-            [crit.CRITScores for crit in artifacts.CRIT_scores_QA_B],
+            [crit.CRITScores for crit in artifacts.CRIT_scores_QA_A],
         ),
     )

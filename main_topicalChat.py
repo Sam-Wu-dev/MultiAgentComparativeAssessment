@@ -1,10 +1,10 @@
-# main_topicalchat.py
+# main_topicalChat.py  (argparse version, with definitions + fact-before-dialogue + speaker labels)
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Tuple, Optional
 
 from Domain.candidate import Candidate
 from Domain.round import Round
@@ -17,88 +17,173 @@ from Pipeline.make_pairs import ensure_pairs
 MEMBER_NAME: str = "member"
 
 # -------------------------
-# Metric-specific settings (TopicalChat)
+# Metric-specific settings (TopicalChat; aligned with G-Eval/UniEval)
 # -------------------------
 METRIC_CLAIMS = {
-    # Dialog-friendly claim templates (A/B are system responses for the same context)
-    "natural": "Given the same dialogue context, {A} is more natural than {B}",
-    "maintains_context": "Given the same dialogue context, {A} maintains context better than {B}",
-    "engaging": "Given the same dialogue context, {A} is more engaging than {B}",
-    "uses_knowledge": "Given the same dialogue context, {A} uses knowledge better than {B}",
+    "naturalness":  "Response {A} is more natural than response {B}",
+    "coherence":    "Given the same dialogue context, response {A} is more coherent than response {B}",
+    "engagingness": "Given the same dialogue context and facts, response {A} is more engaging than response {B}",
+    "groundedness": "Given the same facts, response {A} is more grounded in knowledge than response {B}",
 }
-
-NATURAL_DEFINITION = """
-Judge NATURAL purely by linguistic naturalness and human-likeness:
-- Fluent, coherent phrasing; appropriate tone and wording.
-- Penalize awkward, robotic, or ungrammatical expressions.
-- Do NOT consider factual correctness beyond clear linguistic plausibility.
-"""
-
-MAINTAINS_CONTEXT_DEFINITION = """
-Judge MAINTAINS CONTEXT by how well the response stays consistent with the dialogue history:
-- Correctly references entities, intents, and prior turns.
-- Avoids contradictions or ignoring user’s last message.
-- Penalize off-topic or context-agnostic replies.
-"""
-
-ENGAGING_DEFINITION = """
-Judge ENGAGING by how much the response invites further conversation:
-- Interesting, specific, and responsive; asks good follow-ups when appropriate.
-- Avoids bland, generic filler; shows curiosity or personality while staying appropriate.
-"""
-
-USES_KNOWLEDGE_DEFINITION = """
-Judge USES KNOWLEDGE by whether the response appropriately leverages relevant facts:
-- Brings in accurate, on-topic knowledge tied to the user’s interest.
-- Avoids hallucinations or irrelevant trivia.
-- When knowledge is unnecessary, do not penalize concise, correct responses.
-"""
 
 METRIC_TITLES = {
-    "natural": "TopicalChat Naturalness Committee",
-    "maintains_context": "TopicalChat Context-Consistency Committee",
-    "engaging": "TopicalChat Engagement Committee",
-    "uses_knowledge": "TopicalChat Knowledge-Use Committee",
+    "naturalness":  "TopicalChat Naturalness Committee",
+    "coherence":    "TopicalChat Coherence Committee",
+    "engagingness": "TopicalChat Engagingness Committee",
+    "groundedness": "TopicalChat Groundedness Committee",
 }
 
+# Legacy directory names → canonical metric keys
+LEGACY_TO_CANON = {
+    "natural": "naturalness",
+    "maintains_context": "coherence",
+    "engaging": "engagingness",
+    "uses_knowledge": "groundedness",
+}
 
-def _metric_definition(metric: str) -> str:
-    return {
-        "natural": NATURAL_DEFINITION,
-        "maintains_context": MAINTAINS_CONTEXT_DEFINITION,
-        "engaging": ENGAGING_DEFINITION,
-        "uses_knowledge": USES_KNOWLEDGE_DEFINITION,
-    }[metric]
+# -------------------------
+# Metric Definitions (concise; injected into committee_context)
+# -------------------------
+METRIC_DEFINITIONS = {
+    "naturalness": (
+        "Judge NATURALNESS purely by linguistic human-likeness:\n"
+        "- Fluent, grammatical, idiomatic, appropriate tone.\n"
+        "- Do NOT judge factuality or context usage."
+    ),
+    "coherence": (
+        "Judge COHERENCE by fit to dialogue history:\n"
+        "- Stays on topic; references prior turns correctly; no contradictions."
+    ),
+    "engagingness": (
+        "Judge ENGAGINGNESS by how much the reply invites further conversation:\n"
+        "- Specific, interesting, responsive; good follow-ups when appropriate.\n"
+        "- Facts may enhance engagement if relevant."
+    ),
+    "groundedness": (
+        "Judge GROUNDEDNESS by support from provided facts:\n"
+        "- Claims are anchored in the facts; avoid hallucinations.\n"
+        "- Style is irrelevant except where it affects evidential correctness."
+    ),
+}
 
+# -------------------------
+# Helpers
+# -------------------------
+def escape_braces(s: str) -> str:
+    """Make curly braces literal for f-strings / prompt templates."""
+    return s.replace("{", "{{").replace("}", "}}")
 
-def build_committee_context(metric: str, safe_dialogue: str | None) -> str:
+def label_speakers(dialogue_block: str,
+                   a_tag: str = "Speaker A",
+                   b_tag: str = "Speaker B") -> str:
     """
-    Build the committee context for a TopicalChat metric.
-    We include the dialogue reference for metrics that depend on context
-    (maintains_context, uses_knowledge, engaging), but not for pure naturalness.
+    Alternate-label each non-empty line in a dialogue block as Speaker A/B.
+    """
+    if not dialogue_block:
+        return ""
+    lines = [ln.strip() for ln in dialogue_block.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    lines = [ln for ln in lines if ln]
+    out = []
+    a_turn = True
+    for ln in lines:
+        tag = a_tag if a_turn else b_tag
+        out.append(f"{tag}: {ln}")
+        a_turn = not a_turn
+    return "\n".join(out)
+
+def parse_context_file(ctx_path: Path) -> Tuple[str, Optional[str]]:
+    """
+    Parse a context.txt of the form:
+
+    Context:
+    <multi-line dialogue history>
+
+    Fact:
+    <multi-line fact or '_nofact'>
+
+    Returns (dialogue_history, fact_or_None).
+    """
+    if not ctx_path.exists():
+        return ("", None)
+
+    raw = ctx_path.read_text(encoding="utf-8")
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+
+    ctx_anchor = "Context:"
+    fact_anchor = "Fact:"
+
+    ctx_start = text.find(ctx_anchor)
+    fact_start = text.find(fact_anchor)
+
+    dialogue = ""
+    fact = None
+
+    if ctx_start != -1 and fact_start != -1:
+        dialogue = text[ctx_start + len(ctx_anchor):fact_start].strip()
+        fact_block = text[fact_start + len(fact_anchor):].strip()
+        fact = None if fact_block.lower().startswith("_nofact") else fact_block
+    elif ctx_start != -1:
+        dialogue = text[ctx_start + len(ctx_anchor):].strip()
+    elif fact_start != -1:
+        fact_block = text[fact_start + len(fact_anchor):].strip()
+        fact = None if fact_block.lower().startswith("_nofact") else fact_block
+
+    return (dialogue, fact)
+
+def build_committee_context(metric: str,
+                            fact_block: Optional[str],
+                            dialogue_block: Optional[str]) -> str:
+    """
+    Build committee prompt with definition + references.
+    Order of references: Facts first, then Dialogue (if present).
     """
     title = METRIC_TITLES[metric]
-    definition = _metric_definition(metric)
     base = f"""
     We are in the {title}.
     We must decide which of two candidate responses better satisfies the metric: {metric}.
     We are deciding between {{A}} and {{B}}.
-
-    Authoritative metric definition:
-    {definition}
     Only evaluate the candidates on the given metric.
     """.strip()
 
-    needs_context = metric in {"maintains_context", "uses_knowledge", "engaging"}
-    if needs_context and safe_dialogue:
-        return f"""{base}
+    definition = METRIC_DEFINITIONS[metric]
+    parts = [base, "Metric definition:\n" + escape_braces(definition)]
 
-    Conversation context (reference):
-    {safe_dialogue}
-    """.rstrip()
-    else:
-        return base
+    # References: FACTS first, then DIALOGUE
+    if fact_block:
+        parts.append("Knowledge facts (reference):\n" + escape_braces(fact_block))
+    if dialogue_block:
+        parts.append("Conversation context (reference):\n" + escape_braces(dialogue_block))
 
+    return "\n\n".join(parts)
+
+def compose_pair_reference(metric: str,
+                           dialogue_labeled: Optional[str],
+                           fact: Optional[str]) -> Optional[str]:
+    """
+    UniEval-style inputs (with labeled dialogue), with FACT before DIALOGUE when both are present.
+      - naturalness: None
+      - coherence: dialogue
+      - engagingness: fact (+ dialogue if provided)
+      - groundedness: fact
+    """
+    if metric == "naturalness":
+        return None
+
+    if metric == "coherence":
+        return ("Conversation context (reference):\n" + escape_braces(dialogue_labeled)) if dialogue_labeled else ""
+
+    if metric == "engagingness":
+        chunks = []
+        if fact:
+            chunks.append("Knowledge facts (reference):\n" + escape_braces(fact))
+        if dialogue_labeled:
+            chunks.append("Conversation context (reference):\n" + escape_braces(dialogue_labeled))
+        return "\n\n".join(chunks) if chunks else ""
+
+    if metric == "groundedness":
+        return ("Knowledge facts (reference):\n" + escape_braces(fact)) if fact else ""
+
+    return None
 
 def print_match_summary(prefix: str, m) -> None:
     if not m:
@@ -119,7 +204,6 @@ def print_match_summary(prefix: str, m) -> None:
     if getattr(m, "positionalBias", None) is not None:
         print(f"{prefix}  Positional bias (ΣA − ΣB): {m.positionalBias:.3f}")
 
-
 def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
     """Load all Candidate JSON files from a per-metric directory."""
     out: List[Candidate] = []
@@ -131,16 +215,18 @@ def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
             print(f"[warn] failed to load Candidate from {f.name}: {e}")
     return out
 
-
+# -------------------------
+# Main (argparse)
+# -------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pairwise comparisons on a single TopicalChat context/metric folder."
+        description="Run pairwise comparisons on a single TopicalChat context/metric folder (UniEval-aligned)."
     )
     parser.add_argument(
         "--metric_dir",
         type=str,
         required=True,
-        help="Path to one metric folder (e.g., topicalchat/<ctx_id>/engaging).",
+        help="Path to one metric folder (e.g., topicalchat/<ctx_id>/coherence or legacy uses_knowledge).",
     )
     parser.add_argument(
         "--round_root",
@@ -163,10 +249,16 @@ def main() -> None:
     round_root = Path(args.round_root)
     round_root.mkdir(parents=True, exist_ok=True)
 
-    # metric is the last folder name
-    metric = metric_dir.name.lower()
+    # metric = last folder name; map legacy -> canonical
+    raw_metric = metric_dir.name.lower()
+    metric = LEGACY_TO_CANON.get(raw_metric, raw_metric)
+
     if metric not in METRIC_CLAIMS:
-        raise SystemExit(f"Unknown metric folder: {metric}")
+        valid = ", ".join(METRIC_CLAIMS.keys())
+        legacy = ", ".join(sorted(LEGACY_TO_CANON.keys()))
+        raise SystemExit(
+            f"Unknown metric folder: {metric}. Use one of canonical [{valid}] or legacy [{legacy}]."
+        )
 
     # load candidates (MX.json files)
     candidates: List[Candidate] = load_candidates_from_dir(metric_dir)
@@ -175,22 +267,28 @@ def main() -> None:
 
     # load conversation context from parent folder (context.txt)
     ctx_path = metric_dir.parent / "context.txt"
-    ctx_text = ctx_path.read_text(encoding="utf-8") if ctx_path.exists() else ""
-    safe_ctx = ctx_text.replace("{", "{{").replace("}", "}}")
+    dialogue_raw, fact_raw = parse_context_file(ctx_path)
+    dialogue_labeled = label_speakers(dialogue_raw) if dialogue_raw else ""
 
-    # context template + whether to pass reference into pair
-    needs_context = metric in {"maintains_context", "uses_knowledge", "engaging"}
-    if needs_context:
-        committee_context_template = build_committee_context(metric, safe_ctx)
-        pair_reference = ctx_text
-    else:
-        committee_context_template = build_committee_context(metric, None)
-        pair_reference = None
+    # Compose pair reference (FACT first where both exist)
+    pair_reference = compose_pair_reference(
+        metric,
+        dialogue_labeled=dialogue_labeled if dialogue_labeled else None,
+        fact=fact_raw if fact_raw else None,
+    )
+
+    # Build committee context (with metric definition; FACT before DIALOGUE)
+    committee_context_template = build_committee_context(
+        metric,
+        fact_block=fact_raw if fact_raw else None,
+        dialogue_block=dialogue_labeled if dialogue_labeled else None,
+    )
 
     metric_round_dir = round_root / metric
     metric_round_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[info] Creating round for metric={metric} at: {metric_round_dir}")
+    print(f"[info] Creating round for metric={metric} (from '{raw_metric}') at: {metric_round_dir}")
+
     rnd = Round.create(
         metric_round_dir,
         candidates,
@@ -220,12 +318,13 @@ def main() -> None:
 
     print("[all done]")
 
-
 if __name__ == "__main__":
     main()
 
+
+
 """
-python main_topicalchat.py \
-  --metric_dir /train-data1/shaosen/USR-TopicalChat/dataFolder/topicalchat"/ctx_0000/engaging \
+python main_topicalChat.py \
+  --metric_dir /train-data1/shaosen/USR-TopicalChat/dataFolder/topicalchat/ctx_0000/engaging \
   --round_root /home/shaosen/LLM/Multi-agent/Saving/TopicalChat/ctx_0000
 """

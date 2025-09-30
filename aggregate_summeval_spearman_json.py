@@ -266,10 +266,10 @@ if __name__ == "__main__":
     main()
 """
 python aggregate_summeval_spearman_json.py \
-  --out_root /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_5 \
-  --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_5/spearman_summary_K64.json
+  --out_root /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_CH \
+  --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_CH/spearman_summary.json
   
 python aggregate_summeval_spearman_json.py \
-  --out_root /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_8 \
-  --out_json /home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_8/spearman_summary.json
+  --out_root /home/shaosen/LLM/Multi-agent/Saving/TopicalChat \
+  --out_json /home/shaosen/LLM/Multi-agent/Saving/TopicalChat/spearman_summary.json
 """

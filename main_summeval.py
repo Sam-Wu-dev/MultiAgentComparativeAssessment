@@ -20,10 +20,10 @@ MEMBER_NAME: str = "member"
 # Metric-specific settings
 # -------------------------
 METRIC_CLAIMS = {
-    "coherence": "For the same source article, {A} is more coherent than {B}",
-    "consistency": "For the same source article, {A} is more consistent than {B}",
-    "fluency": "{A} is more fluent than {B}",
-    "relevance": "For the same source article, {A} is more relevant than {B}",
+    "coherence": "For the same source article, summary {A} is more coherent than summary {B}",
+    "consistency": "For the same source article, summary {A} is more consistent than summary {B}",
+    "fluency": "Summary {A} is more fluent than summary {B}",
+    "relevance": "For the same source article, summary {A} is more relevant than summary {B}",
 }
 
 METRIC_TITLES = {
@@ -32,6 +32,7 @@ METRIC_TITLES = {
     "fluency": "Summary Fluency Evaluation Committee",
     "relevance": "Summary Relevance Evaluation Committee",
 }
+
 
 def build_committee_context(metric: str, safe_article: str | None) -> str:
     title = METRIC_TITLES[metric]

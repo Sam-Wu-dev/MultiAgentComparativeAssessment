@@ -20,15 +20,15 @@ MEMBER_NAME: str = "member"
 # Metric-specific settings (TopicalChat; aligned with G-Eval/UniEval)
 # -------------------------
 METRIC_CLAIMS = {
-    "naturalness":  "Response {A} is more natural than response {B}",
-    "coherence":    "Given the same dialogue context, response {A} is more coherent than response {B}",
+    "naturalness": "Response {A} is more natural than response {B}",
+    "coherence": "Given the same dialogue context, response {A} is more coherent than response {B}",
     "engagingness": "Given the same dialogue context and facts, response {A} is more engaging than response {B}",
     "groundedness": "Given the same facts, response {A} is more grounded in knowledge than response {B}",
 }
 
 METRIC_TITLES = {
-    "naturalness":  "TopicalChat Naturalness Committee",
-    "coherence":    "TopicalChat Coherence Committee",
+    "naturalness": "TopicalChat Naturalness Committee",
+    "coherence": "TopicalChat Coherence Committee",
     "engagingness": "TopicalChat Engagingness Committee",
     "groundedness": "TopicalChat Groundedness Committee",
 }
@@ -45,26 +45,12 @@ LEGACY_TO_CANON = {
 # Metric Definitions (concise; injected into committee_context)
 # -------------------------
 METRIC_DEFINITIONS = {
-    "naturalness": (
-        "Judge NATURALNESS purely by linguistic human-likeness:\n"
-        "- Fluent, grammatical, idiomatic, appropriate tone.\n"
-        "- Do NOT judge factuality or context usage."
-    ),
-    "coherence": (
-        "Judge COHERENCE by fit to dialogue history:\n"
-        "- Stays on topic; references prior turns correctly; no contradictions."
-    ),
-    "engagingness": (
-        "Judge ENGAGINGNESS by how much the reply invites further conversation:\n"
-        "- Specific, interesting, responsive; good follow-ups when appropriate.\n"
-        "- Facts may enhance engagement if relevant."
-    ),
-    "groundedness": (
-        "Judge GROUNDEDNESS by support from provided facts:\n"
-        "- Claims are anchored in the facts; avoid hallucinations.\n"
-        "- Style is irrelevant except where it affects evidential correctness."
-    ),
+    "naturalness": "Naturalness, Does the response seem to be something that a person would naturally say?",
+    "coherence": "Coherence, Does the response serve as a valid continuation of the preceding conversation?",
+    "engagingness": "Engagingness, Is the response dull or interesting?",
+    "groundedness": "Groundedness, Given the fact that the response is conditioned on, how well does the response use that fact?",
 }
+
 
 # -------------------------
 # Helpers
@@ -73,15 +59,19 @@ def escape_braces(s: str) -> str:
     """Make curly braces literal for f-strings / prompt templates."""
     return s.replace("{", "{{").replace("}", "}}")
 
-def label_speakers(dialogue_block: str,
-                   a_tag: str = "Speaker A",
-                   b_tag: str = "Speaker B") -> str:
+
+def label_speakers(
+    dialogue_block: str, a_tag: str = "Speaker A", b_tag: str = "Speaker B"
+) -> str:
     """
     Alternate-label each non-empty line in a dialogue block as Speaker A/B.
     """
     if not dialogue_block:
         return ""
-    lines = [ln.strip() for ln in dialogue_block.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    lines = [
+        ln.strip()
+        for ln in dialogue_block.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ]
     lines = [ln for ln in lines if ln]
     out = []
     a_turn = True
@@ -90,6 +80,7 @@ def label_speakers(dialogue_block: str,
         out.append(f"{tag}: {ln}")
         a_turn = not a_turn
     return "\n".join(out)
+
 
 def parse_context_file(ctx_path: Path) -> Tuple[str, Optional[str]]:
     """
@@ -119,20 +110,21 @@ def parse_context_file(ctx_path: Path) -> Tuple[str, Optional[str]]:
     fact = None
 
     if ctx_start != -1 and fact_start != -1:
-        dialogue = text[ctx_start + len(ctx_anchor):fact_start].strip()
-        fact_block = text[fact_start + len(fact_anchor):].strip()
+        dialogue = text[ctx_start + len(ctx_anchor) : fact_start].strip()
+        fact_block = text[fact_start + len(fact_anchor) :].strip()
         fact = None if fact_block.lower().startswith("_nofact") else fact_block
     elif ctx_start != -1:
-        dialogue = text[ctx_start + len(ctx_anchor):].strip()
+        dialogue = text[ctx_start + len(ctx_anchor) :].strip()
     elif fact_start != -1:
-        fact_block = text[fact_start + len(fact_anchor):].strip()
+        fact_block = text[fact_start + len(fact_anchor) :].strip()
         fact = None if fact_block.lower().startswith("_nofact") else fact_block
 
     return (dialogue, fact)
 
-def build_committee_context(metric: str,
-                            fact_block: Optional[str],
-                            dialogue_block: Optional[str]) -> str:
+
+def build_committee_context(
+    metric: str, fact_block: Optional[str], dialogue_block: Optional[str]
+) -> str:
     """
     Build committee prompt with definition + references.
     Order of references: Facts first, then Dialogue (if present).
@@ -152,13 +144,16 @@ def build_committee_context(metric: str,
     if fact_block:
         parts.append("Knowledge facts (reference):\n" + escape_braces(fact_block))
     if dialogue_block:
-        parts.append("Conversation context (reference):\n" + escape_braces(dialogue_block))
+        parts.append(
+            "Conversation context (reference):\n" + escape_braces(dialogue_block)
+        )
 
     return "\n\n".join(parts)
 
-def compose_pair_reference(metric: str,
-                           dialogue_labeled: Optional[str],
-                           fact: Optional[str]) -> Optional[str]:
+
+def compose_pair_reference(
+    metric: str, dialogue_labeled: Optional[str], fact: Optional[str]
+) -> Optional[str]:
     """
     UniEval-style inputs (with labeled dialogue), with FACT before DIALOGUE when both are present.
       - naturalness: None
@@ -170,20 +165,27 @@ def compose_pair_reference(metric: str,
         return None
 
     if metric == "coherence":
-        return ("Conversation context (reference):\n" + escape_braces(dialogue_labeled)) if dialogue_labeled else ""
+        return (
+            ("Conversation context (reference):\n" + escape_braces(dialogue_labeled))
+            if dialogue_labeled
+            else ""
+        )
 
     if metric == "engagingness":
         chunks = []
         if fact:
             chunks.append("Knowledge facts (reference):\n" + escape_braces(fact))
         if dialogue_labeled:
-            chunks.append("Conversation context (reference):\n" + escape_braces(dialogue_labeled))
+            chunks.append(
+                "Conversation context (reference):\n" + escape_braces(dialogue_labeled)
+            )
         return "\n\n".join(chunks) if chunks else ""
 
     if metric == "groundedness":
         return ("Knowledge facts (reference):\n" + escape_braces(fact)) if fact else ""
 
     return None
+
 
 def print_match_summary(prefix: str, m) -> None:
     if not m:
@@ -204,6 +206,7 @@ def print_match_summary(prefix: str, m) -> None:
     if getattr(m, "positionalBias", None) is not None:
         print(f"{prefix}  Positional bias (ΣA − ΣB): {m.positionalBias:.3f}")
 
+
 def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
     """Load all Candidate JSON files from a per-metric directory."""
     out: List[Candidate] = []
@@ -214,6 +217,7 @@ def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
         except Exception as e:
             print(f"[warn] failed to load Candidate from {f.name}: {e}")
     return out
+
 
 # -------------------------
 # Main (argparse)
@@ -287,7 +291,9 @@ def main() -> None:
     metric_round_dir = round_root / metric
     metric_round_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[info] Creating round for metric={metric} (from '{raw_metric}') at: {metric_round_dir}")
+    print(
+        f"[info] Creating round for metric={metric} (from '{raw_metric}') at: {metric_round_dir}"
+    )
 
     rnd = Round.create(
         metric_round_dir,
@@ -318,9 +324,9 @@ def main() -> None:
 
     print("[all done]")
 
+
 if __name__ == "__main__":
     main()
-
 
 
 """

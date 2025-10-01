@@ -1,10 +1,10 @@
-# main_summeval.py
+# main_summeval.py  — SummEval with §4.3 metric definitions injected
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from Domain.candidate import Candidate
 from Domain.round import Round
@@ -33,22 +33,73 @@ METRIC_TITLES = {
     "relevance": "Summary Relevance Evaluation Committee",
 }
 
+# -------------------------
+# SummEval §4.3 Definitions (concise, faithful)
+# -------------------------
+METRIC_DEFINITIONS = {
+    "coherence": (
+        "Coherence — the collective quality of all sentences. "
+        "Aligned with the DUC ‘structure and coherence’ guideline: "
+        "the summary should be well-structured and well-organized, building from sentence to sentence "
+        "into a coherent body of information about the topic (not just a heap of related facts)."
+    ),
+    "consistency": (
+        "Consistency — factual alignment with the source. "
+        "A consistent summary contains only statements entailed by the source document; "
+        "penalize hallucinated or contradictory facts."
+    ),
+    "fluency": (
+        "Fluency — quality of individual sentences. "
+        "Following DUC guidelines: no formatting/capitalization problems or obvious grammatical errors "
+        "(e.g., fragments, missing components) that hinder readability."
+    ),
+    "relevance": (
+        "Relevance — selection of important content from the source. "
+        "Include only important information; penalize redundancies and excess/unimportant content."
+    ),
+}
 
-def build_committee_context(metric: str, safe_article: str | None) -> str:
+
+# -------------------------
+# Helpers
+# -------------------------
+def escape_braces(s: str) -> str:
+    """Make curly braces literal for f-strings / prompt templates."""
+    return s.replace("{", "{{").replace("}", "}}")
+
+
+def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
+    """Load all Candidate JSON files from a per-metric directory."""
+    out: List[Candidate] = []
+    for f in sorted(metric_dir.glob("*.json")):
+        try:
+            obj = json.loads(f.read_text(encoding="utf-8"))
+            out.append(Candidate.model_validate(obj))
+        except Exception as e:
+            print(f"[warn] failed to load Candidate from {f.name}: {e}")
+    return out
+
+
+def build_committee_context(metric: str, safe_article: Optional[str]) -> str:
+    """
+    Build the committee prompt:
+      • Title + decision target
+      • Official SummEval §4.3 definition for the chosen metric
+      • Source article (reference) for all metrics except fluency (kept per your prior behavior)
+    """
     title = METRIC_TITLES[metric]
     base = f"""
     This is the {title}.
     The committee must decide which of two candidate summaries better satisfies the metric: {metric}.
     """.strip()
 
-    if metric == "fluency":
-        return base
-    else:
-        return f"""{base}
+    definition = METRIC_DEFINITIONS[metric]
+    parts = [base, "Metric definition:\n" + escape_braces(definition)]
 
-    Source article (reference):
-    {safe_article}
-    """.rstrip()
+    if metric != "fluency" and safe_article:
+        parts.append("Source article (reference):\n" + escape_braces(safe_article))
+
+    return "\n\n".join(parts)
 
 
 def print_match_summary(prefix: str, m) -> None:
@@ -71,21 +122,12 @@ def print_match_summary(prefix: str, m) -> None:
         print(f"{prefix}  Positional bias (ΣA − ΣB): {m.positionalBias:.3f}")
 
 
-def load_candidates_from_dir(metric_dir: Path) -> List[Candidate]:
-    """Load all Candidate JSON files from a per-metric directory."""
-    out: List[Candidate] = []
-    for f in sorted(metric_dir.glob("*.json")):
-        try:
-            obj = json.loads(f.read_text(encoding="utf-8"))
-            out.append(Candidate.model_validate(obj))
-        except Exception as e:
-            print(f"[warn] failed to load Candidate from {f.name}: {e}")
-    return out
-
-
+# -------------------------
+# Main (argparse)
+# -------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run pairwise comparisons on a single SummEval article/metric folder."
+        description="Run pairwise comparisons on a single SummEval article/metric folder (with §4.3 definitions)."
     )
     parser.add_argument(
         "--metric_dir",
@@ -114,30 +156,29 @@ def main() -> None:
     round_root = Path(args.round_root)
     round_root.mkdir(parents=True, exist_ok=True)
 
-    # metric is last folder name
     metric = metric_dir.name.lower()
     if metric not in METRIC_CLAIMS:
         raise SystemExit(f"Unknown metric folder: {metric}")
 
-    # load candidates
+    # Load candidates
     candidates: List[Candidate] = load_candidates_from_dir(metric_dir)
     if not candidates:
         raise SystemExit(f"No candidate JSONs found in: {metric_dir}")
 
-    # load article text from parent folder
+    # Load article text from parent folder
     article_path = metric_dir.parent / "article.txt"
     article_text = (
         article_path.read_text(encoding="utf-8") if article_path.exists() else ""
     )
-    safe_article = article_text.replace("{", "{{").replace("}", "}}")
+    safe_article = escape_braces(article_text) if article_text else ""
 
-    # context
+    # Context + pair reference
     if metric == "fluency":
         committee_context_template = build_committee_context(metric, None)
         pair_reference = None
     else:
         committee_context_template = build_committee_context(metric, safe_article)
-        pair_reference = article_text
+        pair_reference = article_text  # raw text for the agents; not brace-escaped
 
     metric_round_dir = round_root / metric
     metric_round_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +193,7 @@ def main() -> None:
         budget=args.budget,
     )
 
-    # build pairs
+    # Build pairs
     pairs = ensure_pairs(
         rnd,
         reference=pair_reference,
@@ -161,7 +202,7 @@ def main() -> None:
     rnd.pairs = pairs
     print(f"[info] Pair artifacts ready: {len(pairs)}")
 
-    # compute + save
+    # Compute + Save
     rnd.analysis = compute_round_analysis(rnd, pairs)
     saved_path = rnd.save()
     print(f"[done] Round saved: {saved_path}")
@@ -175,6 +216,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 """
 python main_summeval.py \
   --metric_dir /train-data1/shaosen/SummEvalDataSet/SummEval/dataFolder/cnn/88c2481234e763c9bbc68d0ab1be1d2375c1349a/coherence \

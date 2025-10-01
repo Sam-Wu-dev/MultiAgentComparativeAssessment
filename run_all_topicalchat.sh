@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATA_ROOT="/train-data1/shaosen/USR-TopicalChat/dataFolder/topicalchat"
-OUT_ROOT="/home/shaosen/LLM/Multi-agent/Saving/TopicalChat/all_2"
+OUT_ROOT="/train-data1/shaosen/Saving/TopicalChat/all_2"
 # BUDGET=48   # or adjust per experiment
 AGG_OUT_ROOT="$OUT_ROOT"
 AGG_JSON="$OUT_ROOT/spearman_summary.json"

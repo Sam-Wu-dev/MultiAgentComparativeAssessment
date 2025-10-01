@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DATA_ROOT="/train-data1/shaosen/SummEvalDataSet/SummEval/dataFolder/cnn"
-OUT_ROOT="/home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_CH"
+OUT_ROOT="/home/shaosen/LLM/Multi-agent/Saving/SummEval/cnn_1"
 BUDGET=48   # adjust as needed
 
 AGG_OUT_ROOT="$OUT_ROOT"

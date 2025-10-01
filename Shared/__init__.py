@@ -5,18 +5,12 @@ except ImportError as e:
         "LiteLlm requires the 'litellm' package. "
         "Please install it with 'pip install litellm'."
     ) from e
-from google.adk.planners import BuiltInPlanner
-from google.genai import types
 
-DynamicPlanner = BuiltInPlanner(
-    thinking_config=types.ThinkingConfig(thinking_budget=-1)
-)
-NoSelfReasoningPlanner = BuiltInPlanner(
-    thinking_config=types.ThinkingConfig(thinking_budget=0)
-)
-# https://ai.google.dev/gemini-api/docs/thinking?hl=zh-tw
-# MODEL = LiteLlm(model="openai/gpt-4o")
+# MODEL = (
+#     LiteLlm(
+#         model="openai/google/flan-t5-xl",  # "openai/" tells LiteLLM to use OpenAI-format
+#         api_base="http://localhost:8080/v1",  # TGI OpenAI-compatible Messages API
+#         api_key="none",  # TGI can ignore; keep a placeholder
+#     ),
+# )
 MODEL20 = "gemini-2.0-flash"
-# MODEL = "gemini-2.5-pro"
-MODEL25 = "gemini-2.5-flash"
-# MODEL = "gemini-2.0-flash-lite"
